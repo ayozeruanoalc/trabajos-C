@@ -1,0 +1,289 @@
+#include <errno.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#include <string.h> 
+#include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
+#include <math.h>
+#include <pthread.h>
+#include <fcntl.h>
+
+#include "error.h"
+
+#define MAX_RAND_VALUE 1000
+#define ZERO_DIFF ((double) 1e-9) 
+
+unsigned long initial_time;
+
+// variables globales
+	double R = 0;
+	pthread_mutex_t cerrojo;
+	//int horrible = 0;
+
+unsigned long time_in_millis()
+{
+  struct timeval tv;
+  if(gettimeofday(&tv,NULL))
+  {
+    print_error(__func__,__FILE__,__LINE__,errno);
+    return 0;
+  }
+  return tv.tv_sec*1000+tv.tv_usec/1000;
+}
+
+typedef struct
+{
+  unsigned int id;
+  double* vector1;
+	double* vector2;
+  int position;
+  int elems;
+  double sum;
+} thread_ctx;
+
+void* thread(void* thread_arg) // se modifica para adaptarse al producto escalar
+{
+  thread_ctx* ctx=(thread_ctx*) thread_arg;
+
+  //printf("[%06ld][%s-%u] starting\n",time_in_millis()-initial_time,__func__,ctx->id);
+  //printf("[%06ld][%s-%u] adding %d elements starting at position %d:\n",time_in_millis()-initial_time,__func__,ctx->id,ctx->elems,ctx->position);
+
+  //ctx->sum=0;
+	// R = 0;
+  for(int i=ctx->position; i<ctx->position+ctx->elems; i++)
+  {
+    //printf("[%06ld][%s-%u] --> adding element %d: %f\n",time_in_millis()-initial_time,__func__,ctx->id,i,ctx->vector[i]);
+	pthread_mutex_lock(&cerrojo);
+    R += ctx->vector1[i]*ctx->vector2[i];
+	pthread_mutex_unlock(&cerrojo);
+	//printf("%f\n", R);
+  }
+
+  //printf("[%06ld][%s-%u] obtained sum: %f\n",time_in_millis()-initial_time,__func__,ctx->id,ctx->sum);
+  //printf("[%06ld][%s-%u] finishing\n",time_in_millis()-initial_time,__func__,ctx->id);
+  return thread_arg;
+}
+
+int main(int argc, char *argv[])
+{
+	int horrible = 0;
+
+for (int i = 0; i < 1000; i++){ // inicio del for de 10000 iteraciones
+
+ R = 0;
+
+  initial_time=time_in_millis();
+  char* program_name=strrchr(argv[0],'/')+1;
+
+  const unsigned int n_threads=8;
+  
+  int n_elems=((argc>1)?  atoi(argv[1]): 0);
+  if(n_elems<n_threads) 
+  {
+    print_error_warning_msg(
+      "ERROR",
+      __func__,
+      __FILE__,
+      __LINE__,
+      "how many elements do you want to sum? At least must be %d!",
+      n_threads
+    );
+    printf("\nusage: ./%s <numbers_of_elements>\n\n",program_name);
+    return EXIT_FAILURE;
+  }
+
+  srand(time(NULL)+i);
+  double v1[n_elems]; // VECTOR 1
+	double v2[n_elems]; // VECTOR 2
+
+  /*printf(
+    "[%06ld][%s] random vector (%d elements):\n",
+    time_in_millis()-initial_time,
+    __func__,
+    n_elems
+  ); */
+
+	// CREAMOS LOS VECTORES CON VALORES ALEATORIOS
+	//printf("Valores del VECTOR 1\n");
+  for(int i=0; i<n_elems; i++)
+  {
+    v1[i]=((double)(2*MAX_RAND_VALUE)*rand())/((double) RAND_MAX)-MAX_RAND_VALUE;
+    /*printf(
+      "[%06ld][%s] --> element %d: %f\n",
+      time_in_millis()-initial_time,
+      __func__,i,v1[i] 
+    ); */
+  }
+  
+	//printf("\n");
+	
+	//printf("Valores del VECTOR 2\n");
+	for(int i=0; i<n_elems; i++)
+  {
+    v2[i]=((double)(2*MAX_RAND_VALUE)*rand())/((double) RAND_MAX)-MAX_RAND_VALUE;
+    /* printf(
+      "[%06ld][%s] --> element %d: %f\n",
+      time_in_millis()-initial_time,
+      __func__,i,v2[i] 
+    ); */
+  }
+
+  pthread_t the_threads[n_threads];
+  thread_ctx thread_ctxs[n_threads];
+  int thread_elems=n_elems/(n_threads+1); // Cociente de los elementos creados entre el numero
+	// de hilos existentes
+	int resto = n_elems % (n_threads+1); // cantidad restante de elementos a asignar en caso de 
+	// division no exacta (va a actuar como counter)
+	int sobrante = n_elems % (n_threads+1); // va a conservar el valor inicial del resto
+
+  for(int i=0; i<n_threads; i++)
+  {
+    thread_ctxs[i].id=i;
+    thread_ctxs[i].vector1=v1;
+		thread_ctxs[i].vector2=v2;
+    thread_ctxs[i].position=(resto > 0)?
+			i*(thread_elems+1) : i*(thread_elems)+sobrante;
+			
+    thread_ctxs[i].elems=(resto > 0)? 
+      thread_elems+1 : thread_elems;
+		
+	resto--;
+
+    if(pthread_create(&the_threads[i],NULL,thread,(void*) &thread_ctxs[i]))
+    {
+      print_error_and_msg(
+        __func__,__FILE__,__LINE__,
+        errno,strerror(errno),
+        "thread %d cannot be created! Aborting!",
+        i
+      );
+      return EXIT_FAILURE;
+    }
+    /* printf(
+      "[%06ld][%s] thread %d launched (position: %d, elements: %d)\n",
+      time_in_millis()-initial_time,
+      __func__,i,thread_ctxs[i].position,thread_ctxs[i].elems
+    ); */
+  }
+
+  for(int i=0; i<n_threads; i++)
+  {
+    thread_ctx* rptr;
+    /* printf(
+      "[%06ld][%s] waiting for thread %d\n",
+      time_in_millis()-initial_time,
+      __func__,
+      i 
+    ); */
+    if(pthread_join(the_threads[i],(void**) &rptr))
+    {
+      print_error_and_msg(
+        __func__,__FILE__,__LINE__,
+        errno,strerror(errno),
+        "thread %d cannot be joined! Aborting!",
+        i
+      );
+      return EXIT_FAILURE;
+    }
+    /*printf(
+      "[%06ld][%s] thread %d joined\n",
+      time_in_millis()-initial_time,
+      __func__,rptr->id
+    );*/
+  }
+
+	int main_position = (resto > 0)?
+		thread_ctxs[7].position+thread_elems+1 : thread_ctxs[7].position+thread_elems;
+
+double sum_main = 0;
+	
+	if (n_elems == 8){
+		sum_main = 0;
+	}
+
+	else{
+
+	for (int i = main_position; i < n_elems; i++){
+		//printf("valor: %f  %d\n", v1[i], i);
+		//printf("valor: %f  %d\n", v2[i], i);
+		sum_main += v1[i]*v2[i];
+	}
+	
+	}
+	//printf("Resultado del thread main: %f\n", sum_main);
+
+  // printf("[%06ld][%s] results:\n",time_in_millis()-initial_time,__func__);
+  //double parallel_sum=0;
+
+/*
+  for(int i=0; i<n_threads; i++) {
+ 	//R += thread_ctxs[i].sum; // puede que el error este aqui
+	 printf("Valor de R: %f (iteracion %d)\n", R, i);
+}
+*/
+
+	//printf("Resultado de los hilos (sin el hilo main): %f\n", R);
+	R += sum_main;
+	
+	
+  printf("[%06ld][%s] --> parallel sum: %f\n",time_in_millis()-initial_time,__func__, R);
+  
+	//double sequential_sum=0;
+	double R2 = 0;
+  for(int i=0; i<n_elems; i++) R2 += v1[i]*v2[i];
+  printf("[%06ld][%s] --> sequential sum: %f\n",time_in_millis()-initial_time,__func__, R2);
+  printf(
+    "[%06ld][%s] --> %s\n",
+    time_in_millis()-initial_time,
+    __func__,
+    (fabs(R-R2)<ZERO_DIFF? "" : "not equal, WRONG!!") 
+  );
+
+	if (fabs(R-R2) >= ZERO_DIFF) {
+		horrible++;
+		exit(0);
+	}
+  
+
+
+
+
+// SEGMENTO DE ARCHIVOS
+
+
+int fichero;
+  int contarbyte = 0;
+  int lenr = sizeof(R) + sizeof("Resultado: %f") + contarbyte;
+  char preresultado[50];
+  sprintf(preresultado, "Resultado: %f", R);
+  int counter = 0;
+	while (preresultado[counter] != '\0'){
+		counter++;	
+	}
+  char resultado[counter];
+  fichero = open("resultado.txt", O_RDWR | O_CREAT | O_TRUNC, 0644);
+  sprintf(resultado, "Resultado: %f", R);
+  write(fichero, resultado, sizeof(resultado));
+  close(fichero);
+  fichero = open("resultado.txt", O_RDONLY);
+  read(fichero, resultado, sizeof(resultado));
+  close(fichero);
+  printf("%s\n", resultado);
+  //int sizeprueba = sizeof(resultado);
+	//printf("%d", sizeof(R));
+	//printf("%d", sizeof("Resultado: %f"));
+  // return EXIT_SUCCESS;
+
+} 
+// fin del for
+
+printf("Errores: %d\n", horrible);
+
+return EXIT_SUCCESS;
+
+
+
+}
+
