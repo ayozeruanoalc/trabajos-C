@@ -3,7 +3,7 @@
 
 Este repositorio contiene los trabajos prácticos de los bloques dedicados a la programación de sistemas en GNU/Linux, incluyendo gestión de procesos, hilos y manipulación de archivos en C. 
 
-[![My Skills](https://skillicons.dev/icons?i=c)](https://skillicons.dev)
+[![My Skills](https://skillicons.dev/icons?i=c,linux)](https://skillicons.dev)
 
 Autores: **Ayoze Ruano Alcántara, Enrique Reina Hernández y Fabio Nesta Arteaga Cabrera**.
 
