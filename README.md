@@ -1,7 +1,8 @@
 
 ## Trabajos Prácticos en lenguaje C
 
-[![My Skills](https://skillicons.dev/icons?i=c,linux)](https://skillicons.dev)
+[![My Skills](https://go-skill-icons.vercel.app/api/icons?i=c,centos,linux)](https://go-skill-icons.vercel.app)
+
 
 Este repositorio contiene los trabajos prácticos de los bloques dedicados a la programación de sistemas en GNU/Linux, incluyendo gestión de procesos, hilos y manipulación de archivos en C. 
 
